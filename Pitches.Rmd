@@ -14,7 +14,7 @@ library(metR)
 ```
 # Logistic regression(or knn classification) using  sz_top/sz_bottom, plate_x, plate_z, to make expected called strikes. Maybe try to make separate regressions for different pitch types and pitcher/batter handedness, also counts. 
 ```{r, include=FALSE}
-files <- list.files("/Users/tylergorecki/Desktop/SASL/Borderline Pitches Project/Pitch Data", pattern="*.csv", full.names=TRUE)
+files <- list.files("/Users/tylergorecki/Desktop/SASL/StrikeZoneAnalysis/Pitch Data", pattern="*.csv", full.names=TRUE)
 pitches <- lapply(files, read.csv, header = TRUE)
 all_pitches <- Reduce(rbind, pitches)
 all_pitches$called_strike <- all_pitches$description == "called_strike"
