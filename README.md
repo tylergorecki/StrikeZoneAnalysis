@@ -8,7 +8,19 @@ Our original goal was to analyze whether there is a trend among hitters in the M
 
 All pitches used in the analysis are from the 2022 MLB season. 
 
+Called Strikes Write Up : final deliverable after semester of work on this project
+
+Called Strikes App.Rmd : interactive R-shiny app that we created for interactive component of project; users can analyze individual hitters, trends over time, and more
+
+Pitches.Rmd : code that created the statistics and other data manipulation/modeling (Pitches.pdf is output of this file)
+
 all_takes2.csv : File for all taken pitches from the season with hitter name, pitch location, zone size for the hitter (top and bottom), boolean called strike value
+
+hitters.csv : our self-created statistic for each hitter in MLB during this time with some summary statistics given our data as well
+
+Qualified.csv : list of qualified hitters in this time frame and some of their statistics
+
+Pitch Data folder : raw pitch data from Baseball Savant
 
 ## Project Description
 
