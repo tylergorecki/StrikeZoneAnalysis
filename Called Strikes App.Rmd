@@ -1,0 +1,273 @@
+---
+title: "Measuring the strike calls MLB hitters receive"
+author: "Samuel Brown, Tyler Gorecki, James Carney"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(shiny)
+library(tidyverse)
+library(mgcv)
+library(plotly)
+setwd('/Users/tylergorecki/Desktop/SASL/Borderline Pitches Project')
+
+# Get statcast data
+all_takes <- read.csv("all_takes2.csv") 
+# Get fangraphs data
+qual <- read.csv("Qualified.csv") %>% 
+  select(Season, Name, PA) %>%
+  mutate(Name = gsub("\\.", "", Name),
+         Name = gsub(" II", "", Name),
+         Name = gsub("a-se", "a-Se", Name)) %>%
+  pivot_wider(names_from = Season, values_from = PA, names_prefix = "PA")
+
+hitters <- read.csv("hitters.csv")
+
+hitters2 <- hitters %>%
+  merge(qual, by.x = "hitter_name", by.y = "Name") %>%
+  mutate(
+    esaa2018 = case_when(
+      !is.na(PA2018) ~ esaa2018),
+    esaa2019 = case_when(
+      !is.na(PA2019) ~ esaa2019),
+    esaa2020 = case_when(
+      !is.na(PA2020) ~ esaa2020),
+    esaa2021 = case_when(
+      !is.na(PA2021) ~ esaa2021),
+    esaa2022 = case_when(
+      !is.na(PA2022) ~ esaa2022),
+    espp2018 = case_when(
+      !is.na(PA2018) ~ espp2018),
+    espp2019 = case_when(
+      !is.na(PA2019) ~ espp2019),
+    espp2020 = case_when(
+      !is.na(PA2020) ~ espp2020),
+    espp2021 = case_when(
+      !is.na(PA2021) ~ espp2021),
+    espp2022 = case_when(
+      !is.na(PA2022) ~ espp2022)
+  ) %>%
+  select(-starts_with("PA"))
+
+rm(qual)
+
+# Make hitter function
+plot_hitter2 <- function(name){
+  if (!(name %in% all_takes$hitter_name)){
+    return("Please reenter the hitter's name in this format: 'First Last' with no period after Jr")
+  }
+  
+  takes <- all_takes %>%
+    filter(hitter_name == name)
+  
+  if (nrow(takes) < 300){
+    return("Please give the name of a hitter who has played for longer")
+  }
+  
+  hitter_gam <- gam(called_strike ~ s(plate_x, plate_z), family = binomial, data = takes)
+  grid <- data.frame(plate_x = rep(seq(-2.5, 2.5, .05), each = 5/.05 + 1), 
+                     plate_z = rep(seq(5, 0, by = -.05), 5/.05 + 1))
+  grid$prob <- predict(hitter_gam, newdata = grid, type = "response")
+  
+  ggplot(grid, aes(x = plate_x, y = plate_z, fill = prob)) +
+    geom_tile() +
+    scale_fill_gradient(low = "white", high = "red") +
+    geom_rect(aes(xmin = -8.5/12, xmax = 8.5/12, 
+                  ymin = median(takes$sz_bot), ymax = median(takes$sz_top)), alpha = 0, color = "black") +
+    theme_bw() +
+    labs(x = "Horizontal Location in feet \n(From the catcher's POV)", y = "Vertical Location in feet", 
+         title = name, fill = "Strike Probability") + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+}
+```
+
+ 
+
+```{r, echo = FALSE}
+shinyApp(
+  # Define UI for random distribution app ----
+ui <- fluidPage(
+  # App title ----
+  titlePanel("Features"),
+  
+    # Sidebar layout with input and output definitions ----
+    sidebarLayout(
+  
+      # Sidebar panel for inputs ----
+      sidebarPanel(
+        
+        # Input: Box for typing hitter name for the strike zone
+        textInput("hitter_name", 
+                  label = "Hitter for the strike zone plot:", 
+                  value = "Mike Trout"),
+        
+        # br() element to introduce extra vertical spacing ----
+        br(),
+  
+        # Input: Slider for the minimum number of takes on the leaderboard ----
+        sliderInput("np",
+                    "Minimum number of takes for the leaderboard(multiply by 5 for overall):",
+                    value = 1000,
+                    min = 1,
+                    max = 1500),
+        
+        # br() element to introduce extra vertical spacing ----
+        br(),
+        
+        # Select years for the leaderboard shown
+        radioButtons("years", "Select year(s) for the leaderboard:",
+                     c("2018" = 2018,
+                       "2019" = 2019,
+                       "2020" = 2020,
+                       "2021" = 2021,
+                       "2022" = 2022,
+                       "Overall" = 2010))
+      ),
+  
+      # Main panel for displaying outputs ----
+      mainPanel(
+  
+        # Output: Tabset w/ plot, summary, and table ----
+        tabsetPanel(type = "tabs",
+                    tabPanel("Strike Zone Plot", plotOutput("zone")),
+                    tabPanel("ESAA Year-to-Year", plotlyOutput("espp_yty")),
+                    tabPanel("Zone Size vs ESAA", plotlyOutput("size")), 
+                    tabPanel("ESAA Leaderboards", tableOutput("table"), 
+                             style = "height: 410px; overflow-y: scroll"),
+        ),
+        width = 7
+      )
+    )
+  ),
+  
+  server <- function(input, output) {
+
+    # Generate a hitter's strike zone
+    output$zone <- renderPlot({
+      plot_hitter2(input$hitter_name)
+    })
+  
+    # Show espp year-to-year ----
+    output$espp_yty <- renderPlotly({
+      hitter_scatter <- data.frame('Name' = c(hitters2$hitter_name, hitters2$hitter_name, 
+                                              hitters2$hitter_name, hitters2$hitter_name), 
+                                   'Seasons' = c(rep('2018-2019', nrow(hitters2)), 
+                                                 rep('2019-2020', nrow(hitters2)),
+                                                 rep('2020-2021', nrow(hitters2)),
+                                                 rep('2021-2022', nrow(hitters2))),
+                                   'ESPP' = c(hitters2$espp2018, hitters2$espp2019, hitters2$espp2020, 
+                                              hitters2$espp2021),
+                                   'ESPP2' = c(hitters2$espp2019, hitters2$espp2020, 
+                                               hitters2$espp2021, hitters2$espp2022)) %>%
+        drop_na() %>%
+        mutate(ESPP = round(ESPP, 3),
+               ESPP2 = round(ESPP2, 3)) %>%
+        ggplot(aes(x = ESPP, y = ESPP2, 
+                   text = sprintf("ESPP 1: %s<br>ESPP 2: %s<br>Hitter: %s<br>Seasons: %s",
+                                  ESPP, ESPP2, Name, Seasons))) +
+        geom_point() +
+        theme_bw() +
+        labs(x = "ESPP Season 1", y = "ESPP Season 2", title = "2018-2022(Qualified Hitters)")
+      ggplotly(hitter_scatter, tooltip = "text")
+      }
+    )
+    
+    # Make the size vs results plot ----
+    output$size <- renderPlotly({
+      {data.frame('Name' = rep(hitters2$hitter_name, 5), 
+                  'Season' = c(rep(2018, nrow(hitters2)), 
+                                rep(2019, nrow(hitters2)),
+                                rep(2020, nrow(hitters2)),
+                                rep(2021, nrow(hitters2)),
+                                rep(2022, nrow(hitters2))),
+                  'ESAA' = c(hitters2$esaa2018, hitters2$esaa2019, hitters2$esaa2020, 
+                             hitters2$esaa2021, hitters2$esaa2022), 
+                  'sz_size' = c(hitters2$sz_size2018, hitters2$sz_size2019, hitters2$sz_size2020, 
+                                hitters2$sz_size2021, hitters2$sz_size2022)) %>%
+          mutate(ESAA = round(ESAA, 2)) %>%
+          ggplot(aes(x = sz_size, y = ESAA,
+                     text = sprintf("Strike Zone Size: %s<br>ESAA: %s<br>Hitter: %s<br>Season: %s",
+                                    sz_size, ESAA, Name, Season))) +
+          geom_point() + 
+          xlim(1.4, 2.2) +
+          theme_bw() +
+          labs(x = "Size of the Strike Zone", title = "2018-2022(Qualified Hitters)")} %>%
+          ggplotly(tooltip = "text")
+      })
+  
+    # Present the data in table form ----
+    output$table <- renderTable({
+      if (input$years == 2018){
+        hitters %>%
+          filter(np2018 > input$np) %>%
+          select(hitter_name, contains("2018"), -sz_top2018, -sz_bot2018) %>%
+          rename(Name = hitter_name,
+                 ESAA = esaa2018,
+                 ESPP = espp2018,
+                 Takes = np2018,
+                 'Strike Zone Size' = sz_size2018) %>%
+          arrange(-ESAA)
+      } else if(input$years == 2019){
+        hitters %>%
+          filter(np2019 > input$np) %>%
+          select(hitter_name, esaa2019, espp2019, np2019, sz_size2019) %>%
+          rename(Name = hitter_name,
+                 ESAA = esaa2019,
+                 ESPP = espp2019,
+                 Takes = np2019,
+                 'Strike Zone Size' = sz_size2019) %>%
+          arrange(-ESAA)
+      } else if(input$years == 2020){
+        hitters %>%
+          filter(np2020 > input$np) %>%
+          select(hitter_name, esaa2020, espp2020, np2020, sz_size2020) %>%
+          drop_na(np2020) %>%
+          rename(Name = hitter_name,
+                 ESAA = esaa2020,
+                 ESPP = espp2020,
+                 Takes = np2020,
+                 'Strike Zone Size' = sz_size2020) %>%
+          arrange(-ESAA)
+      } else if(input$years == 2021){
+        hitters %>%
+          filter(np2021 > input$np) %>%
+          select(hitter_name, esaa2021, espp2021, np2021, sz_size2021) %>%
+          drop_na(np2021) %>%
+          rename(Name = hitter_name,
+                 ESAA = esaa2021,
+                 ESPP = espp2021,
+                 Takes = np2021,
+                 'Strike Zone Size' = sz_size2021) %>%
+          arrange(-ESAA)
+      } else if(input$years == 2022){
+        hitters %>%
+          filter(np2022 > input$np) %>%
+          select(hitter_name, esaa2022, espp2022, np2022, sz_size2022) %>%
+          rename(Name = hitter_name,
+                 ESAA = esaa2022,
+                 ESPP = espp2022,
+                 Takes = np2022,
+                 'Strike Zone Size' = sz_size2022) %>%
+          arrange(-ESAA)
+      } else if(input$years == 2010){
+        hitters %>%
+          filter(all_pitches > input$np*5) %>%
+          select(hitter_name, Overall, esppOverall, all_pitches, sz_sizeOverall) %>%
+          rename(Name = hitter_name,
+                 ESAA = Overall,
+                 ESPP = esppOverall,
+                 Takes = all_pitches,
+                 'Strike Zone Size' = sz_sizeOverall) %>%
+          arrange(-ESAA)
+      }
+    })
+  },
+
+  options = list(height = 630, width = 1080)
+)
+```
+
+
+
