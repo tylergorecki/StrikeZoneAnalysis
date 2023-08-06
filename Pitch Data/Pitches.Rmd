@@ -1,0 +1,107 @@
+---
+title: "SASL Project"
+author: "Samuel Brown"
+date: "2022-09-19"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(mgcv)
+library(metR)
+```
+# Logistic regression(or knn classification) using  sz_top/sz_bottom, plate_x, plate_z, to make expected called strikes. Maybe try to make separate regressions for different pitch types and pitcher/batter handedness, also counts. 
+```{r}
+files <- list.files("C:/Users/brown/Documents/Stats stuff/SASL/Articles/Called Strikes", pattern="*.csv", full.names=TRUE)
+pitches <- lapply(files, read.csv, header = TRUE)
+all_pitches <- Reduce(rbind, pitches)
+all_pitches$called_strike <- all_pitches$description == "called_strike"
+```
+
+```{r}
+levels(factor(all_pitches$pitch_type))
+filter(all_pitches, 
+       pitch_type == "FF", p_throws == "L")
+colnames(all_pitches)
+```
+
+```{r}
+# Make the logit model
+logreg <- glm(called_strike ~ plate_x + plate_z, family = binomial, data = all_pitches)
+summary(logreg)
+names(logreg)
+logreg$contrasts
+table(all_pitches$called_strike, logreg$fitted.values > .5)
+all_pitches$log_prob <- logreg$fitted.values
+```
+
+```{r}
+# Make a GAM
+gam <- gam(called_strike ~ s(plate_x) + s(plate_z), family = binomial, data = all_pitches)
+summary(gam)
+table(all_pitches$called_strike, gam$fitted.values > .5)
+all_pitches$gam_prob <- gam$fitted.values
+```
+
+```{r}
+# KNN Classification
+
+```
+
+```{r}
+### Make a strike zone plot of each
+# Logit
+ggplot(all_pitches, aes(x = plate_x, y = plate_z, z = log_prob)) +
+  geom_contour_filled() +
+  geom_contour()
+# GAM
+ggplot(all_pitches, aes(x = plate_x, y = plate_z, z = gam_prob)) +
+  geom_contour_filled() +
+  geom_contour(size = 1.3, color = 'black') 
+
+# Fancy grid
+grid_predict <- function(fit){
+  grid <- expand.grid(plate_x = seq(-1.5, 1.5, length=50),
+                      plate_z = seq(1, 4, length=50))
+  grid$lp <- predict(fit, grid, type = "response")
+  grid
+}
+
+test <- grid_predict(gam)
+
+ggplot(test, aes(x = plate_x, y = plate_z, z = lp)) +
+  geom_contour_filled() +
+  geom_contour()
+```
+
+```{r}
+# Hitter table
+all_pitches %>%
+  group_by(player_name) %>%
+  summarize(exp_strikes_aa = sum(gam_prob) - sum(called_strike)) %>%
+  mutate(exp_strikes_aa = round(exp_strikes_aa, 2)) %>%
+  arrange(exp_strikes_aa)
+```
+# Find expected strikes above average in relation to different characteristics?
+```{r}
+
+```
+
+```{r}
+# Plot Bogaerts' heat map with line for 50% called
+all_pitches %>%
+  filter(player_name == "Bogaerts, Xander") %>%
+  ggplot(aes(x = plate_x, y = plate_z, color = gam_prob)) +
+  geom_point()
+
+all_pitches %>%
+  filter(player_name == "Judge, Aaron") %>%
+  ggplot(aes(x = plate_x, y = plate_z, color = gam_prob)) +
+  geom_point()
+```
+
+
+# Sources
+1. https://baseballsavant.mlb.com/statcast_search?hfPT=&hfAB=&hfGT=R%7C&hfPR=ball%7Ccalled%5C.%5C.strike%7C&hfZ=&hfVenue=&hfBBL=&hfNewZones=11%7C12%7C13%7C14%7C16%7C17%7C18%7C19%7C21%7C22%7C23%7C24%7C26%7C27%7C28%7C29%7C&hfPull=&hfC=&hfSea=2022%7C&hfSit=&player_type=batter&hfOuts=&hfOpponent=&pitcher_throws=&batter_stands=&hfSA=&game_date_gt=&game_date_lt=&hfMo=&hfTeam=&home_road=&hfRO=&position=&hfInfield=&hfOutfield=&hfInn=&hfBBT=&hfFlag=&metric_1=&group_by=name&min_pitches=0&min_results=0&min_pas=0&sort_col=pitches&player_event_sort=api_p_release_speed&sort_order=desc#results 
